@@ -5,6 +5,12 @@ app_description = "Customizations for the labratory module"
 app_email = "nitish.m@quantumberg.com"
 app_license = "mit"
 
+
+override_doctype_class = {
+    "Lab Test": "labratory_custom_app.overrides.lab_test.CustomLabTest"
+}
+
+
 # Apps
 # ------------------
 
