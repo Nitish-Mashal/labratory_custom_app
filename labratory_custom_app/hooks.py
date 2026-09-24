@@ -5,10 +5,30 @@ app_description = "Customizations for the labratory module"
 app_email = "nitish.m@quantumberg.com"
 app_license = "mit"
 
+from labratory_custom_app.overrides import lab_test
 
-# override_doctype_class = {
-#     "Lab Test": "labratory_custom_app.overrides.lab_test.CustomLabTest"
-# }
+
+override_doctype_class = {
+    "Lab Test": "labratory_custom_app.overrides.lab_test.CustomLabTest"
+}
+
+fixtures = [
+
+    # Custom Fields
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "in", [
+                "Patient",
+                "Normal Test Result",
+                "Lab Test",
+                "Normal Test Template",
+                "Lab Test Template"
+            ]]
+        ]
+    },
+
+]
 
 
 # Apps
