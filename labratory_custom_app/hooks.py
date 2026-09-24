@@ -30,7 +30,9 @@ fixtures = [
 
 ]
 
-
+app_include_js = [
+    "/assets/labratory_custom_app/frontend/index.js"
+]
 # Apps
 # ------------------
 
