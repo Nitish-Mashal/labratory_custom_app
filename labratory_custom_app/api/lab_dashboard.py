@@ -287,7 +287,7 @@ def get_recent_service_requests(
 
             "priority": get_code_value(row.priority),
 
-            "quantity": row.quantity,
+            "quantity": row.quantity, 
 
             "sample_collection_required": (
                 bool(row.sample_collection_required)

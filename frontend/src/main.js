@@ -1,7 +1,9 @@
 import "./index.css";
 
 import { createApp } from "vue";
+
 import router from "./router";
+
 import App from "./App.vue";
 
 import {
@@ -15,11 +17,14 @@ import VueApexCharts from "vue3-apexcharts";
 
 
 // ==================================================
-// GLOBAL VUE APP
+// GLOBAL VARIABLES
 // ==================================================
 
 let vueApp = null;
+
 let currentContainer = null;
+
+let currentHost = null;
 
 
 // ==================================================
@@ -29,6 +34,7 @@ let currentContainer = null;
 function createLabApp(container) {
 
     if (!container) {
+
         console.error(
             "Lab Dashboard: Vue container not found"
         );
@@ -41,7 +47,7 @@ function createLabApp(container) {
 
 
     // ------------------------------------------------
-    // Frappe UI
+    // Frappe UI configuration
     // ------------------------------------------------
 
     if (window.frappe) {
@@ -62,7 +68,7 @@ function createLabApp(container) {
 
 
     // ------------------------------------------------
-    // Frappe UI Resources
+    // Frappe UI
     // ------------------------------------------------
 
     app.use(resourcesPlugin);
@@ -84,7 +90,6 @@ function createLabApp(container) {
         Button
     );
 
-
     app.component(
         "apexchart",
         VueApexCharts
@@ -103,78 +108,58 @@ function createLabApp(container) {
 
 
 // ==================================================
-// STANDALONE VUE MODE
+// UNMOUNT CURRENT VUE APP
 // ==================================================
 
-function mountStandalone() {
-
-    const container =
-        document.getElementById("app");
-
-
-    if (!container) {
-
-        console.error(
-            "Vue #app element not found"
-        );
-
-        return;
-    }
-
+function unmountVueApp() {
 
     if (vueApp) {
-        return;
+
+        try {
+
+            vueApp.unmount();
+
+        } catch (error) {
+
+            console.error(
+                "Lab Vue unmount error:",
+                error
+            );
+
+        }
+
     }
 
 
-    vueApp =
-        createLabApp(container);
+    vueApp = null;
 
+    currentContainer = null;
 
-    currentContainer =
-        container;
-
-
-    console.log(
-        "Lab Dashboard running in standalone Vue mode"
-    );
 }
 
 
 // ==================================================
-// FRAPPE DASHBOARD
+// FIND / CREATE FRAPPE HOST
 // ==================================================
 
-function mountFrappeDashboard(container = null) {
+function getFrappeHost(wrapper) {
 
-    // ------------------------------------------------
-    // Frappe check
-    // ------------------------------------------------
+    if (!wrapper) {
 
-    if (!window.frappe) {
-        return;
+        console.error(
+            "Lab Dashboard: wrapper not found"
+        );
+
+        return null;
     }
 
 
     // ------------------------------------------------
-    // If page JS supplied a container,
-    // use that container directly
-    // ------------------------------------------------
-
-    if (container) {
-
-        mountVueToContainer(container);
-
-        return;
-    }
-
-
-    // ------------------------------------------------
-    // Find Frappe main section
+    // Find Frappe page section
     // ------------------------------------------------
 
     const mainSection =
-        document.querySelector(
+        wrapper.querySelector(
             ".layout-main-section"
         );
 
@@ -182,22 +167,20 @@ function mountFrappeDashboard(container = null) {
     if (!mainSection) {
 
         console.warn(
-            "Lab Dashboard: Frappe main section not ready"
+            "Lab Dashboard: main section not ready"
         );
 
-        return false;
+        return null;
     }
 
 
-    // ------------------------------------------------
-    // Remove Frappe padding
-    // ------------------------------------------------
+    // Remove Frappe default padding
 
     mainSection.style.padding = "0";
 
 
     // ------------------------------------------------
-    // Existing host
+    // Find existing host
     // ------------------------------------------------
 
     let host =
@@ -205,6 +188,10 @@ function mountFrappeDashboard(container = null) {
             "#lab-dashboard-vue-host"
         );
 
+
+    // ------------------------------------------------
+    // Create host if missing
+    // ------------------------------------------------
 
     if (!host) {
 
@@ -229,96 +216,85 @@ function mountFrappeDashboard(container = null) {
     }
 
 
-    // ------------------------------------------------
-    // Mount Vue inside host
-    // ------------------------------------------------
-
-    mountVueToContainer(host);
-
-    return true;
+    return host;
 }
 
 
 // ==================================================
-// MOUNT VUE INTO CONTAINER
+// MOUNT VUE INSIDE FRAPPE
 // ==================================================
 
-function mountVueToContainer(host) {
+function mountFrappeDashboard(wrapper) {
 
-    if (!host) {
+    if (!window.frappe) {
 
-        console.error(
-            "Lab Dashboard: host element missing"
-        );
+        return;
+    }
+
+
+    const route =
+        frappe.get_route();
+
+
+    // Only mount on Lab Dashboard
+
+    if (
+        !route ||
+        route[0] !== "lab_dashboard"
+    ) {
 
         return;
     }
 
 
     // ------------------------------------------------
-    // Already mounted on same container
+    // Get or create host
+    // ------------------------------------------------
+
+    const host =
+        getFrappeHost(wrapper);
+
+
+    if (!host) {
+
+        return false;
+    }
+
+
+    // ------------------------------------------------
+    // Already mounted
     // ------------------------------------------------
 
     if (
         vueApp &&
-        currentContainer === host
+        currentHost === host
     ) {
 
         console.log(
-            "Lab Dashboard: already mounted"
+            "Lab Dashboard already mounted"
         );
 
-        return;
+        return true;
     }
 
 
     // ------------------------------------------------
-    // Unmount previous Vue app
+    // Unmount old Vue app
     // ------------------------------------------------
 
     if (vueApp) {
 
-        try {
+        unmountVueApp();
 
-            vueApp.unmount();
-
-        } catch (error) {
-
-            console.error(
-                "Lab Vue unmount error:",
-                error
-            );
-
-        }
-
-        vueApp = null;
-        currentContainer = null;
     }
 
 
     // ------------------------------------------------
-    // Clear host
+    // Shadow DOM
     // ------------------------------------------------
 
-    host.innerHTML = "";
-
-
-    // ------------------------------------------------
-    // Remove old shadow root if needed
-    // ------------------------------------------------
-
-    let shadow = null;
-
-
-    try {
-
-        shadow =
-            host.shadowRoot;
-
-    } catch (error) {
-
-        shadow = null;
-    }
+    let shadow =
+        host.shadowRoot;
 
 
     // ------------------------------------------------
@@ -327,30 +303,10 @@ function mountVueToContainer(host) {
 
     if (!shadow) {
 
-        try {
-
-            shadow =
-                host.attachShadow({
-                    mode: "open"
-                });
-
-        } catch (error) {
-
-            console.warn(
-                "Shadow DOM could not be created:",
-                error
-            );
-
-            // Fallback to normal container
-
-            vueApp =
-                createLabApp(host);
-
-            currentContainer =
-                host;
-
-            return;
-        }
+        shadow =
+            host.attachShadow({
+                mode: "open"
+            });
 
     }
 
@@ -403,8 +359,245 @@ function mountVueToContainer(host) {
 
 
     // ------------------------------------------------
-    // Create Vue app
+    // Create Vue application
     // ------------------------------------------------
+
+    vueApp =
+        createLabApp(container);
+
+
+    currentContainer =
+        container;
+
+    currentHost =
+        host;
+
+
+    console.log(
+        "Lab Dashboard Vue mounted successfully"
+    );
+
+
+    return true;
+}
+
+
+// ==================================================
+// GLOBAL FUNCTION
+// Called from lab_dashboard.js
+// ==================================================
+
+window.mountLabDashboardFromFrappe =
+    function (wrapper) {
+
+        let attempts = 0;
+
+        const maxAttempts = 20;
+
+
+        function tryMount() {
+
+            attempts++;
+
+
+            // Check current route
+
+            if (!window.frappe) {
+
+                return;
+            }
+
+
+            const route =
+                frappe.get_route();
+
+
+            if (
+                !route ||
+                route[0] !== "lab_dashboard"
+            ) {
+
+                return;
+            }
+
+
+            const success =
+                mountFrappeDashboard(wrapper);
+
+
+            if (success) {
+
+                return;
+            }
+
+
+            // Frappe DOM may not be ready yet
+
+            if (
+                attempts < maxAttempts
+            ) {
+
+                setTimeout(
+                    tryMount,
+                    100
+                );
+
+            } else {
+
+                console.error(
+                    "Lab Dashboard: unable to mount after retries"
+                );
+
+            }
+
+        }
+
+
+        tryMount();
+
+    };
+
+
+// ==================================================
+// ROUTE CHANGE
+// ==================================================
+
+function handleRouteChange() {
+
+    if (!window.frappe) {
+
+        return;
+    }
+
+
+    const route =
+        frappe.get_route();
+
+
+    console.log(
+        "Frappe route:",
+        route
+    );
+
+
+    // ------------------------------------------------
+    // LAB DASHBOARD
+    // ------------------------------------------------
+
+    if (
+        route &&
+        route[0] === "lab_dashboard"
+    ) {
+
+        /*
+         * IMPORTANT:
+         *
+         * Frappe caches pages.
+         * Therefore on_page_load does NOT execute
+         * again when returning to the page.
+         *
+         * We explicitly find the current wrapper
+         * and mount again.
+         */
+
+
+        setTimeout(function () {
+
+            const wrapper =
+                document.querySelector(
+                    '[data-page-route="lab_dashboard"]'
+                );
+
+
+            if (wrapper) {
+
+                window.mountLabDashboardFromFrappe(
+                    wrapper
+                );
+
+                return;
+            }
+
+
+            // Fallback: use page wrapper
+
+            const mainSection =
+                document.querySelector(
+                    ".layout-main-section"
+                );
+
+
+            if (mainSection) {
+
+                mountFrappeDashboard(
+                    mainSection.parentElement
+                );
+
+            }
+
+        }, 100);
+
+
+        return;
+    }
+
+
+    // ------------------------------------------------
+    // OTHER DESK PAGE
+    // ------------------------------------------------
+
+    if (vueApp) {
+
+        console.log(
+            "Leaving Lab Dashboard - unmounting Vue"
+        );
+
+
+        unmountVueApp();
+
+
+        currentHost =
+            null;
+
+
+        /*
+         * Do NOT remove the host here.
+         *
+         * Frappe may reuse the page.
+         *
+         * It will be reused when we return.
+         */
+
+    }
+
+}
+
+
+// ==================================================
+// STANDALONE VUE MODE
+// ==================================================
+
+function mountStandalone() {
+
+    const container =
+        document.getElementById("app");
+
+
+    if (!container) {
+
+        console.error(
+            "Vue #app element not found"
+        );
+
+        return;
+    }
+
+
+    if (vueApp) {
+
+        return;
+    }
+
 
     vueApp =
         createLabApp(container);
@@ -415,182 +608,10 @@ function mountVueToContainer(host) {
 
 
     console.log(
-        "Lab Dashboard mounted inside Frappe"
+        "Lab Dashboard running in standalone Vue mode"
     );
+
 }
-
-
-// ==================================================
-// UNMOUNT
-// ==================================================
-
-function unmountFrappeDashboard() {
-
-    if (vueApp) {
-
-        try {
-
-            vueApp.unmount();
-
-        } catch (error) {
-
-            console.error(
-                "Lab Vue unmount error:",
-                error
-            );
-
-        }
-
-        vueApp = null;
-        currentContainer = null;
-    }
-
-
-    const hosts =
-        document.querySelectorAll(
-            "#lab-dashboard-vue-host"
-        );
-
-
-    hosts.forEach((host) => {
-
-        host.remove();
-
-    });
-}
-
-
-// ==================================================
-// RETRY MOUNT
-// ==================================================
-
-function retryMountFrappeDashboard(
-    attempts = 20
-) {
-
-    if (!window.frappe) {
-        return;
-    }
-
-
-    const route =
-        frappe.get_route();
-
-
-    if (
-        !route ||
-        route[0] !== "lab_dashboard"
-    ) {
-
-        return;
-    }
-
-
-    // Already mounted
-    if (vueApp) {
-
-        return;
-    }
-
-
-    const success =
-        mountFrappeDashboard();
-
-
-    if (success) {
-
-        return;
-    }
-
-
-    // Retry every 100ms
-    if (attempts > 0) {
-
-        setTimeout(() => {
-
-            retryMountFrappeDashboard(
-                attempts - 1
-            );
-
-        }, 100);
-
-    } else {
-
-        console.error(
-            "Lab Dashboard: failed to mount after retries"
-        );
-
-    }
-}
-
-
-// ==================================================
-// ROUTE CHECK
-// ==================================================
-
-function checkFrappeRoute() {
-
-    if (!window.frappe) {
-        return;
-    }
-
-
-    const route =
-        frappe.get_route();
-
-
-    if (
-        route &&
-        route[0] === "lab_dashboard"
-    ) {
-
-        retryMountFrappeDashboard();
-
-    } else {
-
-        if (vueApp) {
-
-            unmountFrappeDashboard();
-
-        }
-
-    }
-}
-
-
-// ==================================================
-// CUSTOM EVENT FROM Frappe page JS
-// ==================================================
-
-window.addEventListener(
-    "lab-dashboard-mount",
-    function (event) {
-
-        console.log(
-            "Lab Dashboard mount event received"
-        );
-
-
-        const element =
-            event.detail?.element;
-
-
-        if (!element) {
-
-            console.warn(
-                "Lab Dashboard: mount event has no element"
-            );
-
-            retryMountFrappeDashboard();
-
-            return;
-        }
-
-
-        mountVueToContainer(element);
-
-    }
-);
 
 
 // ==================================================
@@ -598,6 +619,7 @@ window.addEventListener(
 // ==================================================
 
 function initialize() {
+
 
     // ------------------------------------------------
     // Standalone Vue
@@ -612,18 +634,18 @@ function initialize() {
 
 
     // ------------------------------------------------
-    // Frappe
+    // Initial Frappe route
     // ------------------------------------------------
 
-    setTimeout(() => {
+    setTimeout(function () {
 
-        checkFrappeRoute();
+        handleRouteChange();
 
-    }, 100);
+    }, 300);
 
 
     // ------------------------------------------------
-    // Frappe route changes
+    // Frappe route listener
     // ------------------------------------------------
 
     if (
@@ -636,16 +658,14 @@ function initialize() {
             function () {
 
                 console.log(
-                    "Frappe route changed:",
-                    frappe.get_route()
+                    "Frappe route changed"
                 );
 
 
-                setTimeout(() => {
-
-                    checkFrappeRoute();
-
-                }, 100);
+                setTimeout(
+                    handleRouteChange,
+                    100
+                );
 
             }
         );
@@ -653,8 +673,6 @@ function initialize() {
     }
 
 }
-
-
 
 
 initialize();

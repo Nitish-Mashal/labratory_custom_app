@@ -6,76 +6,6 @@ frappe.pages["lab_dashboard"].on_page_load = function (wrapper) {
         single_column: true
     });
 
-
-    // Wait for Frappe to finish creating
-    // .layout-main-section
-    setTimeout(function () {
-
-        const mainSection =
-            wrapper.querySelector(
-                ".layout-main-section"
-            );
-
-
-        if (!mainSection) {
-
-            console.warn(
-                "Lab Dashboard: main section not ready"
-            );
-
-            return;
-        }
-
-
-        // Remove default Frappe padding
-        mainSection.style.padding = "0";
-
-
-        // Create Vue host
-        let host =
-            mainSection.querySelector(
-                "#lab-dashboard-vue-host"
-            );
-
-
-        if (!host) {
-
-            host =
-                document.createElement("div");
-
-            host.id =
-                "lab-dashboard-vue-host";
-
-            host.style.width =
-                "100%";
-
-            host.style.minHeight =
-                "calc(100vh - 70px)";
-
-            host.style.boxSizing =
-                "border-box";
-
-
-            mainSection.appendChild(host);
-
-        }
-
-
-        // Tell Vue main.js to mount
-        window.dispatchEvent(
-            new CustomEvent(
-                "lab-dashboard-mount",
-                {
-                    detail: {
-                        element: host
-                    }
-                }
-            )
-        );
-
-
-    }, 100);
-
 };
 
 
@@ -83,34 +13,21 @@ frappe.pages["lab_dashboard"].on_page_load = function (wrapper) {
 // PAGE SHOW
 // ==================================================
 
-frappe.pages["lab_dashboard"].on_page_show =
-    function (wrapper) {
+frappe.pages["lab_dashboard"].on_page_show = function (wrapper) {
 
-        setTimeout(function () {
+    // Give Frappe time to finish rendering
+    setTimeout(function () {
 
-            const host =
-                wrapper.querySelector(
-                    "#lab-dashboard-vue-host"
-                );
+        if (
+            window.mountLabDashboardFromFrappe
+        ) {
 
-
-            if (!host) {
-                return;
-            }
-
-
-            window.dispatchEvent(
-                new CustomEvent(
-                    "lab-dashboard-mount",
-                    {
-                        detail: {
-                            element: host
-                        }
-                    }
-                )
+            window.mountLabDashboardFromFrappe(
+                wrapper
             );
 
+        }
 
-        }, 100);
+    }, 100);
 
-    };
+};
