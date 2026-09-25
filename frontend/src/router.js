@@ -1,48 +1,29 @@
-// import {
-//   createRouter,
-//   createMemoryHistory
-// } from 'vue-router'
-
-
-// const routes = [
-
-//   {
-//     path: '/',
-//     name: 'Home',
-
-//     component: () =>
-//       import('@/pages/Home.vue'),
-//   },
-
-// ]
-
-
-// const router = createRouter({
-
-//   history: createMemoryHistory(),
-
-//   routes,
-
-// })
-
-
-// export default router
 import {
   createRouter,
-  createWebHistory,
+  createMemoryHistory
 } from 'vue-router'
 
+
 const routes = [
+
   {
     path: '/',
     name: 'Home',
-    component: () => import('@/pages/Home.vue'),
+
+    component: () =>
+      import('@/pages/Home.vue'),
   },
+
 ]
 
+
 const router = createRouter({
-  history: createWebHistory('/desk/lab_dashboard/'),
+
+  history: createMemoryHistory(),
+
   routes,
+
 })
+
 
 export default router
