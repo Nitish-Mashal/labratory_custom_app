@@ -41,6 +41,8 @@
           v-for="card in statCards"
           :key="card.title"
           class="stat-card"
+          :class="{ 'stat-card-clickable': !!card.action }"
+          @click="card.action && card.action()"
         >
           <div class="stat-icon" :class="card.iconClass">
             <component :is="card.icon" />
@@ -64,7 +66,7 @@
           <div class="panel-header">
             <div>
               <h3>Test Status Overview</h3>
-              <span>Current test processing status</span>
+              <span>Completed and Pending reports</span>
             </div>
           </div>
 
@@ -72,46 +74,46 @@
             <apexchart
               type="donut"
               height="280"
+              width="100%"
               :options="statusOptions"
               :series="statusSeries"
+              @dataPointSelection="handleLabTestStatusClick"
             />
           </div>
         </div>
 
-        <!-- RECENT ORDERS -->
-        <div class="panel orders-panel">
-          <div class="panel-header">
+
+
+        <!-- SALES INVOICE CHART -->
+        <div class="panel sales-invoice-panel">
+          <div class="sales-invoice-header">
             <div>
-              <h3>Recent Orders</h3>
-              <span>Latest laboratory orders</span>
+              <h3>Sales Invoice</h3>
+              <span>Paid amount from the selected date range</span>
             </div>
-            <button type="button" @click="viewAllOrders">
-              View All
-            </button>
+
+            <el-select
+              v-model="salesInvoiceFilter"
+              size="default"
+              class="sales-invoice-filter"
+              @change="reloadSalesInvoiceChart"
+            >
+              <el-option label="Daily" value="daily" />
+              <el-option label="Weekly" value="weekly" />
+              <el-option label="Monthly" value="monthly" />
+              <el-option label="Yearly" value="yearly" />
+            </el-select>
           </div>
 
-          <div class="orders-list">
-            <div
-              v-for="order in recentOrders"
-              :key="order.id"
-              class="order-item"
-            >
-              <div class="order-avatar">
-                {{ order.initials }}
-              </div>
-
-              <div class="order-details">
-                <strong>{{ order.id }}</strong>
-                <span>{{ order.patient }} • {{ order.age }}</span>
-              </div>
-
-              <div class="order-status" :class="order.statusClass">
-                <strong>{{ order.status }}</strong>
-                <span>{{ order.time }}</span>
-              </div>
-
-              <button class="more-button" type="button">⋮</button>
-            </div>
+          <div class="sales-invoice-chart">
+            <apexchart
+              type="line"
+              height="280"
+              width="100%"
+              :options="salesInvoiceChartOptions"
+              :series="salesInvoiceSeries"
+              @dataPointSelection="handleSalesInvoicePointClick"
+            />
           </div>
         </div>
 
@@ -124,20 +126,17 @@
         <div class="panel reports-panel">
           <div class="panel-header">
             <div>
-              <h3>Reports List</h3>
-              <span>Recent laboratory reports</span>
+              <h3>Recent Lab Tests</h3>
+              <span>Lab tests from the selected date range</span>
             </div>
-
-            <button type="button" @click="viewAllReports">
-              View All
-            </button>
           </div>
 
           <div class="reports-list">
             <div
               v-for="report in reports"
               :key="report.id"
-              class="report-item"
+              class="report-item report-item-clickable"
+              @click="openLabTest(report.id)"
             >
               <div
                 class="report-icon"
@@ -147,8 +146,8 @@
               </div>
 
               <div class="report-details">
-                <strong>{{ report.name }}</strong>
-                <span>{{ report.id }} • {{ report.patient }}</span>
+                <strong>{{ report.patient }}</strong>
+                <span>{{ report.id }}</span>
               </div>
 
               <div
@@ -228,13 +227,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 
 import {
-  MagnifyingGlassIcon,
-  BellIcon,
-  QuestionMarkCircleIcon,
-  ChevronDownIcon,
   BeakerIcon,
   ArrowRightIcon,
   DocumentTextIcon,
@@ -245,9 +240,20 @@ import {
 
 const search = ref('')
 
-// =========================================
-// DASHBOARD DATE FILTER
-// =========================================
+/* =========================================================
+   API
+   ========================================================= */
+
+const API_URL = '/api/method/labratory_custom_app.api.lab_dashboard.get_dashboard_data'
+
+const loading = ref(false)
+const apiError = ref('')
+
+const dashboardData = ref(null)
+
+/* =========================================================
+   DATE FILTER
+   ========================================================= */
 
 const formatDate = (date) => {
   const year = date.getFullYear()
@@ -257,10 +263,148 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`
 }
 
-const today = new Date()
+const todayDate = formatDate(new Date())
 
-const fromDate = ref(formatDate(today))
-const toDate = ref(formatDate(today))
+// Default: today -> today
+const fromDate = ref(todayDate)
+const toDate = ref(todayDate)
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
+const formatNumber = (value) => {
+  const number = Number(value || 0)
+
+  return number.toLocaleString('en-IN')
+}
+
+const formatDisplayDate = (value) => {
+  if (!value) return '-'
+
+  const date = new Date(`${value}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+const displayLabTestStatus = (status) => {
+  const value = String(status || '').trim()
+
+  // Backend keeps "Draft"; dashboard displays it as "Pending".
+  if (value.toLowerCase() === 'draft') {
+    return 'Pending'
+  }
+
+  if (value.toLowerCase() === 'completed') {
+    return 'Completed'
+  }
+
+  return value || '-'
+}
+
+const statusClass = (status) => {
+  const value = String(status || '').toLowerCase()
+
+  if (value === 'completed' || value === 'paid') {
+    return 'completed'
+  }
+
+  if (value === 'draft' || value === 'pending' || value === 'unpaid') {
+    return 'pending'
+  }
+
+  if (
+    value === 'cancelled' ||
+    value === 'rejected' ||
+    value === 'overdue'
+  ) {
+    return 'progress'
+  }
+
+  return 'progress'
+}
+
+/* =========================================================
+   FETCH DASHBOARD DATA
+   ========================================================= */
+
+async function fetchDashboardData() {
+  loading.value = true
+  apiError.value = ''
+
+  try {
+    const params = new URLSearchParams()
+
+    // Always send the currently applied dates.
+    // On first load both values are automatically today's date.
+    if (fromDate.value) {
+      params.set('from_date', fromDate.value)
+    }
+
+    if (toDate.value) {
+      params.set('to_date', toDate.value)
+    }
+
+    const queryString = params.toString()
+    const url = `${API_URL}?${queryString}`
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      credentials: 'include',
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`)
+    }
+
+    const result = await response.json()
+
+    if (!result?.message?.success) {
+      throw new Error(
+        result?.message?.error ||
+        result?.message?.message ||
+        'Dashboard API returned an error'
+      )
+    }
+
+    dashboardData.value = result.message
+
+    // Keep the date controls synchronized with the dates
+    // actually used by the backend.
+    if (result.message?.filters?.from_date) {
+      fromDate.value = result.message.filters.from_date
+    }
+
+    if (result.message?.filters?.to_date) {
+      toDate.value = result.message.filters.to_date
+    }
+  } catch (error) {
+    console.error('Dashboard API error:', error)
+
+    dashboardData.value = null
+
+    apiError.value =
+      error?.message ||
+      'Unable to load dashboard data.'
+  } finally {
+    loading.value = false
+  }
+}
+
+/* =========================================================
+   APPLY DATE FILTER
+   ========================================================= */
 
 function applyDateFilter() {
   if (!fromDate.value || !toDate.value) {
@@ -273,74 +417,290 @@ function applyDateFilter() {
     return
   }
 
-  console.log('Dashboard Filter Applied', {
-    from_date: fromDate.value,
-    to_date: toDate.value,
-  })
-
-  // Connect your Frappe API here when backend data is ready.
+  fetchDashboardData()
 }
 
-const statCards = [
+/* =========================================================
+   SUMMARY
+   ========================================================= */
+
+const summary = computed(() => {
+  return dashboardData.value?.summary || {
+    total_lab_tests: 0,
+    total_samples: 0,
+  }
+})
+
+/* =========================================================
+   LAB TEST STATUS COUNTS
+   ========================================================= */
+
+const labTestStatuses = computed(() => {
+  return dashboardData.value?.lab_tests?.statuses || []
+})
+
+const getLabTestStatusCount = (status) => {
+  const item = labTestStatuses.value.find(
+    (row) => String(row.label || '').toLowerCase() === status.toLowerCase()
+  )
+
+  return Number(item?.count || 0)
+}
+
+/* =========================================================
+   NAVIGATION / ROUTES
+   ========================================================= */
+
+const goTo = (path) => {
+  window.location.href = path
+}
+
+const getCurrentDateFilters = () => {
+  return {
+    from_date: fromDate.value,
+    to_date: toDate.value,
+  }
+}
+
+const buildQuery = (params = {}) => {
+  const query = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value))
+    }
+  })
+
+  return query.toString()
+}
+
+const openNewPatient = () => {
+  goTo('/desk/patient/new-patient')
+}
+
+const openNewSampleCollection = () => {
+  goTo('/desk/sample-collection/new-sample-collection')
+}
+
+const openNewLabTest = () => {
+  goTo('/desk/lab-test/new-lab-test')
+}
+
+const openLabTestReport = (status = null) => {
+  const filters = getCurrentDateFilters()
+
+  if (status) {
+    filters.status = status
+  }
+
+  const query = buildQuery(filters)
+
+  goTo(
+    query
+      ? `/desk/lab-test/view/report?${query}`
+      : '/desk/lab-test/view/report'
+  )
+}
+
+const openLabTestList = (status = null) => {
+  const filters = getCurrentDateFilters()
+
+  if (status) {
+    filters.status = status
+  }
+
+  const query = buildQuery(filters)
+
+  goTo(
+    query
+      ? `/desk/lab-test?${query}`
+      : '/desk/lab-test'
+  )
+}
+
+const openSalesInvoiceList = () => {
+  const filters = getCurrentDateFilters()
+  const query = buildQuery(filters)
+
+  goTo(
+    query
+      ? `/desk/sales-invoice?${query}`
+      : '/desk/sales-invoice'
+  )
+}
+
+const openPatientList = () => {
+  goTo('/desk/patient')
+}
+
+const openSampleCollectionList = () => {
+  goTo('/desk/sample-collection')
+}
+
+const openLabTest = (name) => {
+  if (!name) return
+  goTo(`/desk/lab-test/${encodeURIComponent(name)}`)
+}
+
+const handleLabTestStatusClick = (_event, _chartContext, config) => {
+  const index = config?.dataPointIndex
+
+  if (index === undefined || index < 0) {
+    return
+  }
+
+  const item = labTestStatuses.value[index]
+
+  if (!item?.label) {
+    return
+  }
+
+  const apiStatus = String(item.label).trim()
+
+  openLabTestList(apiStatus)
+}
+
+const handleSalesInvoicePointClick = (_event, _chartContext, config) => {
+  const index = config?.dataPointIndex
+
+  if (index === undefined || index < 0) {
+    return
+  }
+
+  const chartData = getSalesChartData.value
+  const key = chartData.keys?.[index]
+
+  if (!key) {
+    openSalesInvoiceList()
+    return
+  }
+
+  let filters = {
+    from_date: fromDate.value,
+    to_date: toDate.value,
+  }
+
+  if (salesInvoiceFilter.value === 'daily') {
+    filters = {
+      from_date: key,
+      to_date: key,
+    }
+  } else if (salesInvoiceFilter.value === 'weekly') {
+    const start = new Date(`${key}T00:00:00`)
+    const end = new Date(start)
+    end.setDate(end.getDate() + 6)
+
+    filters = {
+      from_date: formatDate(start),
+      to_date: formatDate(end),
+    }
+  } else if (salesInvoiceFilter.value === 'monthly') {
+    const [year, month] = key.split('-').map(Number)
+    const start = new Date(year, month - 1, 1)
+    const end = new Date(year, month, 0)
+
+    filters = {
+      from_date: formatDate(start),
+      to_date: formatDate(end),
+    }
+  } else if (salesInvoiceFilter.value === 'yearly') {
+    filters = {
+      from_date: `${key}-01-01`,
+      to_date: `${key}-12-31`,
+    }
+  }
+
+  const query = buildQuery(filters)
+
+  goTo(
+    query
+      ? `/desk/sales-invoice?${query}`
+      : '/desk/sales-invoice'
+  )
+}
+
+/* =========================================================
+   STAT CARDS
+   ========================================================= */
+
+const statCards = computed(() => [
   {
-    title: 'Total Tests Today',
-    value: '1,248',
-    change: '18.6% vs yesterday',
+    title: 'Total Lab Tests',
+    value: formatNumber(summary.value.total_lab_tests),
+    change: 'Selected date range',
     icon: BeakerIcon,
     iconClass: 'blue',
     changeClass: 'positive',
+    action: openLabTestList,
   },
   {
     title: 'Samples Collected',
-    value: '856',
-    change: '12.4% vs yesterday',
+    value: formatNumber(summary.value.total_samples),
+    change: 'Selected date range',
     icon: BeakerIcon,
     iconClass: 'cyan',
     changeClass: 'positive',
+    action: openSampleCollectionList,
   },
   {
-    title: 'Reports Delivered',
-    value: '742',
-    change: '15.2% vs yesterday',
-    icon: DocumentTextIcon,
-    iconClass: 'teal',
+    title: 'Completed Reports',
+    value: formatNumber(getLabTestStatusCount('Completed')),
+    change: 'Completed tests',
+    icon: DocumentCheckIcon,
+    iconClass: 'green',
     changeClass: 'positive',
+    action: () => openLabTestList('Completed'),
   },
   {
     title: 'Pending Reports',
-    value: '106',
-    change: '8.3% vs yesterday',
+    value: formatNumber(getLabTestStatusCount('Draft')),
+    change: 'Pending tests',
     icon: ClipboardDocumentCheckIcon,
-    iconClass: 'green',
+    iconClass: 'purple',
     changeClass: 'positive',
+    action: () => openLabTestList('Draft'),
   },
-]
+])
 
-const statusSeries = [742, 318, 106, 82]
+/* =========================================================
+   LAB TEST STATUS DONUT
+   ========================================================= */
 
-const statusOptions = {
+
+const statusSeries = computed(() => {
+  return labTestStatuses.value.map((item) => Number(item.count || 0))
+})
+
+const statusLabels = computed(() => {
+  return labTestStatuses.value.map((item) => {
+    const label = String(item.label || '')
+
+    return label.toLowerCase() === 'draft'
+      ? 'Pending'
+      : label
+  })
+})
+
+const statusOptions = computed(() => ({
   chart: {
     toolbar: {
       show: false,
     },
     fontFamily: 'Inter, sans-serif',
   },
-  labels: [
-    'Completed',
-    'In Progress',
-    'Pending',
-    'Cancelled',
-  ],
+
+  labels: statusLabels.value,
+
   colors: [
     '#673AB7',
-    '#8A5BB8',
-    '#D84B9D',
-    '#c5b6cc',
+    '#B83C91',
   ],
+
   stroke: {
     width: 2,
     colors: ['#ffffff'],
   },
+
   legend: {
     position: 'right',
     fontSize: '12px',
@@ -348,164 +708,341 @@ const statusOptions = {
       colors: '#6e5b79',
     },
   },
+
   dataLabels: {
     enabled: false,
   },
+
   plotOptions: {
     pie: {
       donut: {
         size: '67%',
         labels: {
           show: true,
+
           name: {
             show: true,
             color: '#8e7d98',
           },
+
           value: {
             show: true,
             color: '#321247',
             fontSize: '24px',
             fontWeight: 700,
+            formatter: (value) => formatNumber(value),
           },
+
           total: {
             show: true,
             label: 'Total',
             color: '#95869e',
-            formatter: () => '1,248',
+            formatter: () => formatNumber(
+              dashboardData.value?.lab_tests?.total || 0
+            ),
           },
         },
       },
     },
   },
+
+  noData: {
+    text: 'No Lab Test data',
+  },
+}))
+
+/* =========================================================
+   SALES INVOICE CHART
+   Uses recent_sales_invoices returned by the dashboard API.
+   ========================================================= */
+
+const salesInvoiceFilter = ref('daily')
+
+const recentSalesInvoices = computed(() => {
+  return dashboardData.value?.recent_sales_invoices || []
+})
+
+const dateKey = (value) => {
+  if (!value) return null
+  return String(value).slice(0, 10)
 }
 
-const recentOrders = [
-  {
-    id: 'ORD-2025-1250',
-    patient: 'Rahul Sharma',
-    age: '32 M',
-    initials: 'RS',
-    status: 'In Progress',
-    time: '10:30 AM',
-    statusClass: 'progress',
-  },
-  {
-    id: 'ORD-2025-1249',
-    patient: 'Priya Patel',
-    age: '28 F',
-    initials: 'PP',
-    status: 'Completed',
-    time: '09:45 AM',
-    statusClass: 'completed',
-  },
-  {
-    id: 'ORD-2025-1248',
-    patient: 'Amit Verma',
-    age: '45 M',
-    initials: 'AV',
-    status: 'Pending',
-    time: '09:15 AM',
-    statusClass: 'pending',
-  },
-  {
-    id: 'ORD-2025-1247',
-    patient: 'Neha Singh',
-    age: '31 F',
-    initials: 'NS',
-    status: 'In Progress',
-    time: '08:40 AM',
-    statusClass: 'progress',
-  },
-]
+const getStartOfWeek = (date) => {
+  const result = new Date(date)
+  const day = result.getDay()
+  const diff = day === 0 ? -6 : 1 - day
 
-const reports = [
-  {
-    id: 'RPT-2025-0987',
-    name: 'Complete Blood Count',
-    patient: 'Rahul Sharma',
-    status: 'Delivered',
-    date: '10:30 AM',
-    statusClass: 'completed',
-    icon: DocumentCheckIcon,
-    iconClass: 'teal',
-  },
-  {
-    id: 'RPT-2025-0986',
-    name: 'Liver Function Test',
-    patient: 'Priya Patel',
-    status: 'Delivered',
-    date: '09:50 AM',
-    statusClass: 'completed',
-    icon: DocumentTextIcon,
-    iconClass: 'blue',
-  },
-  {
-    id: 'RPT-2025-0985',
-    name: 'Thyroid Profile',
-    patient: 'Amit Verma',
-    status: 'Pending',
-    date: '09:20 AM',
-    statusClass: 'pending',
-    icon: ClipboardDocumentCheckIcon,
-    iconClass: 'purple',
-  },
-  {
-    id: 'RPT-2025-0984',
-    name: 'Blood Glucose',
-    patient: 'Neha Singh',
-    status: 'In Review',
-    date: '08:55 AM',
-    statusClass: 'progress',
-    icon: DocumentTextIcon,
-    iconClass: 'cyan',
-  },
-  {
-    id: 'RPT-2025-0983',
-    name: 'Urine Routine',
-    patient: 'Suresh Kumar',
-    status: 'Delivered',
-    date: '08:30 AM',
-    statusClass: 'completed',
-    icon: DocumentCheckIcon,
-    iconClass: 'green',
-  },
-]
+  result.setDate(result.getDate() + diff)
+  result.setHours(0, 0, 0, 0)
 
+  return result
+}
+
+const getSalesChartData = computed(() => {
+  const invoices = recentSalesInvoices.value
+
+  if (!invoices.length) {
+    return {
+      labels: [],
+      values: [],
+    }
+  }
+
+  const grouped = new Map()
+
+  invoices.forEach((invoice) => {
+    const dateValue = dateKey(invoice.posting_date)
+    if (!dateValue) return
+
+    const date = new Date(`${dateValue}T00:00:00`)
+    if (Number.isNaN(date.getTime())) return
+
+    let key
+    let label
+
+    if (salesInvoiceFilter.value === 'daily') {
+      key = dateValue
+      label = date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+      })
+    } else if (salesInvoiceFilter.value === 'weekly') {
+      const weekStart = getStartOfWeek(date)
+      key = formatDate(weekStart)
+      label = `Week ${weekStart.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+      })}`
+    } else if (salesInvoiceFilter.value === 'monthly') {
+      key = `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+      ).padStart(2, '0')}`
+
+      label = date.toLocaleDateString('en-IN', {
+        month: 'short',
+        year: 'numeric',
+      })
+    } else {
+      key = String(date.getFullYear())
+      label = String(date.getFullYear())
+    }
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        label,
+        value: 0,
+      })
+    }
+
+    // The API already calculates paid_amount correctly:
+    // submitted invoice => grand_total - outstanding_amount
+    // draft/cancelled => 0
+    grouped.get(key).value += Number(invoice.paid_amount || 0)
+  })
+
+  const sorted = Array.from(grouped.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+
+  return {
+    labels: sorted.map(([, item]) => item.label),
+    values: sorted.map(([, item]) => item.value),
+    keys: sorted.map(([key]) => key),
+  }
+})
+
+const salesInvoiceSeries = computed(() => [
+  {
+    name: 'Paid Amount',
+    data: getSalesChartData.value.values,
+  },
+])
+
+const salesInvoiceChartOptions = computed(() => ({
+  chart: {
+    type: 'line',
+    toolbar: {
+      show: false,
+    },
+    zoom: {
+      enabled: false,
+    },
+    animations: {
+      enabled: true,
+    },
+    fontFamily: 'Inter, sans-serif',
+  },
+
+  colors: ['#B83C91'],
+
+  stroke: {
+    curve: 'straight',
+    width: 3,
+    lineCap: 'round',
+  },
+
+  markers: {
+    size: 5,
+    strokeColors: '#ffffff',
+    strokeWidth: 2,
+    hover: {
+      size: 7,
+    },
+  },
+
+  dataLabels: {
+    enabled: false,
+  },
+
+  xaxis: {
+    categories: getSalesChartData.value.labels,
+    title: {
+      text:
+        salesInvoiceFilter.value === 'daily'
+          ? 'Day'
+          : salesInvoiceFilter.value === 'weekly'
+            ? 'Week'
+            : salesInvoiceFilter.value === 'monthly'
+              ? 'Month'
+              : 'Year',
+      style: {
+        color: '#75647f',
+        fontSize: '10px',
+        fontWeight: 600,
+      },
+    },
+    labels: {
+      style: {
+        colors: '#75647f',
+        fontSize: '10px',
+      },
+    },
+    axisBorder: {
+      show: false,
+    },
+    axisTicks: {
+      show: false,
+    },
+  },
+
+  yaxis: {
+    title: {
+      text: 'Paid Amount',
+      style: {
+        color: '#75647f',
+        fontSize: '10px',
+        fontWeight: 600,
+      },
+    },
+    labels: {
+      style: {
+        colors: '#75647f',
+        fontSize: '10px',
+      },
+      formatter(value) {
+        if (value >= 1000000) {
+          return `₹${(value / 1000000).toFixed(1)}M`
+        }
+
+        if (value >= 1000) {
+          return `₹${(value / 1000).toFixed(0)}K`
+        }
+
+        return `₹${Math.round(value)}`
+      },
+    },
+  },
+
+  grid: {
+    borderColor: '#E5E7EB',
+    strokeDashArray: 0,
+    xaxis: {
+      lines: {
+        show: false,
+      },
+    },
+  },
+
+  tooltip: {
+    shared: false,
+    intersect: true,
+    theme: 'light',
+    y: {
+      formatter: (value) =>
+        `₹${Number(value || 0).toLocaleString('en-IN')}`,
+    },
+  },
+
+  noData: {
+    text: 'No Sales Invoice data',
+  },
+}))
+
+function reloadSalesInvoiceChart() {
+  // Computed data updates automatically.
+}
+
+/* =========================================================
+   RECENT LAB TESTS
+   ========================================================= */
+
+const recentLabTests = computed(() => {
+  return dashboardData.value?.recent_lab_tests || []
+})
+
+const reports = computed(() => {
+  return recentLabTests.value.map((test) => ({
+    id: test.name,
+    name: test.patient_name || test.patient || 'Unknown Patient',
+    patient: test.patient_name || test.patient || '-',
+    status: displayLabTestStatus(test.status),
+    date: formatDisplayDate(test.date),
+    statusClass: statusClass(test.status),
+    icon:
+      String(test.status || '').toLowerCase() === 'completed'
+        ? DocumentCheckIcon
+        : ClipboardDocumentCheckIcon,
+    iconClass:
+      String(test.status || '').toLowerCase() === 'completed'
+        ? 'teal'
+        : 'purple',
+  }))
+})
+
+/* =========================================================
+   QUICK ACTIONS
+   ========================================================= */
 
 const quickActions = [
   {
     label: 'Add Patient',
     icon: UserPlusIcon,
     class: 'cyan',
-    action: () => console.log('Add Patient'),
+    action: openNewPatient,
   },
   {
     label: 'Collect Sample',
     icon: BeakerIcon,
     class: 'green',
-    action: () => console.log('Collect Sample'),
+    action: openNewSampleCollection,
   },
   {
     label: 'Generate Report',
     icon: DocumentCheckIcon,
     class: 'blue',
-    action: () => console.log('Generate Report'),
+    action: openNewLabTest,
   },
   {
     label: 'View Reports',
     icon: DocumentTextIcon,
     class: 'purple',
-    action: () => console.log('View Reports'),
+    action: () => openLabTestReport(),
   },
 ]
 
-function viewAllOrders() {
-  console.log('View all orders')
+function viewAllReports() {
+  console.log('View all lab tests', recentLabTests.value)
 }
 
-function viewAllReports() {
-  console.log('View all reports')
-}
 function contactWhatsApp() {
   window.open(
     'https://wa.me/919876543210',
@@ -516,6 +1053,15 @@ function contactWhatsApp() {
 function learnMore() {
   console.log('Learn more clicked')
 }
+
+/* =========================================================
+   INITIAL LOAD
+   ========================================================= */
+
+onMounted(() => {
+  // First load automatically sends today's date as both parameters.
+  fetchDashboardData()
+})
 </script>
 
 <style scoped>
@@ -859,6 +1405,35 @@ function learnMore() {
   box-shadow: 0 8px 20px rgba(84, 32, 111, .055);
 }
 
+.stat-card-clickable {
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.stat-card-clickable:hover {
+  transform: translateY(-2px);
+  border-color: #d9c5e4;
+  box-shadow: 0 10px 24px rgba(84, 32, 111, .11);
+}
+
+.report-item-clickable {
+  cursor: pointer;
+  transition: background .18s ease, padding-left .18s ease;
+}
+
+.report-item-clickable:hover {
+  background: #fbf6fd;
+  padding-left: 5px;
+}
+
+.status-chart :deep(.apexcharts-pie-series path) {
+  cursor: pointer;
+}
+
+.sales-invoice-chart :deep(.apexcharts-line-series path) {
+  cursor: pointer;
+}
+
 .stat-icon {
   width: 44px;
   height: 44px;
@@ -922,7 +1497,7 @@ function learnMore() {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 1.35fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
   gap: 14px;
   margin-bottom: 14px;
 }
@@ -985,103 +1560,84 @@ function learnMore() {
 
 .status-panel {
   min-height: 350px;
+  width: 100%;
 }
 
 .status-chart {
+  width: 100%;
+  min-height: 290px;
   padding: 0 10px 8px;
-}
-
-.orders-panel {
-  min-height: 350px;
-}
-
-.orders-list {
-  padding: 4px 14px 11px;
-}
-
-.order-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 0;
-  border-bottom: 1px solid #eee7f2;
-}
-
-.order-item:last-child {
-  border-bottom: 0;
-}
-
-.order-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  background: #f1ebf5;
-  color: #5d4970;
-  font-size: 9px;
+}
+
+.sales-invoice-panel {
+  min-height: 350px;
+  width: 100%;
+}
+
+.sales-invoice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px 4px;
+}
+
+.sales-invoice-header h3 {
+  margin: 0;
+  color: #321247;
+  font-size: 14px;
   font-weight: 700;
 }
 
-.order-details {
-  flex: 1;
-  min-width: 0;
+.sales-invoice-header span {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  color: #93839c;
 }
 
-.order-details strong {
-  display: block;
+.sales-invoice-filter {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.sales-invoice-chart {
+  width: 100%;
+  padding: 8px 12px 8px;
+}
+
+.sales-invoice-chart :deep(.apexcharts-canvas) {
+  width: 100% !important;
+}
+
+.sales-invoice-chart :deep(.apexcharts-tooltip) {
+  border: 1px solid #eee6f3;
+  box-shadow: 0 8px 24px rgba(84, 32, 111, .12);
+}
+
+.sales-invoice-chart :deep(.apexcharts-tooltip-title) {
+  background: #f8f1fa;
+  border-bottom: 1px solid #eadff0;
+  color: #321247;
   font-size: 10px;
-  color: #495763;
 }
 
-.order-details span {
-  display: block;
-  font-size: 9px;
-  color: #9b8ca5;
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sales-invoice-filter :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  box-shadow: none !important;
+  border: 1px solid #e5e7eb;
 }
 
-.order-status {
-  text-align: right;
-  min-width: 70px;
+.sales-invoice-filter :deep(.el-input__wrapper:hover) {
+  border-color: #B83C91;
 }
 
-.order-status strong {
-  display: block;
-  font-size: 9px;
-}
-
-.order-status span {
-  display: block;
-  margin-top: 2px;
-  font-size: 8px;
-  color: #9b8ca5;
-}
-
-.order-status.progress strong {
-  color: #673AB7;
-}
-
-.order-status.completed strong {
-  color: #6f8c44;
-}
-
-.order-status.pending strong {
-  color: #c07b2e;
-}
-
-.more-button {
-  border: 0;
-  background: transparent;
-  color: #85728f;
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
+.sales-invoice-filter :deep(.el-input__wrapper.is-focus) {
+  border-color: #B83C91;
+  box-shadow: 0 0 0 3px rgba(184, 60, 145, .10) !important;
 }
 
 .reports-actions-grid {
@@ -1380,6 +1936,10 @@ function learnMore() {
 }
 
 @media (max-width: 1000px) {
+  .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .dashboard-content {
     padding-left: 18px;
     padding-right: 18px;
@@ -1412,6 +1972,8 @@ function learnMore() {
 }
 
 @media (max-width: 760px) {
+
+
   .page-heading {
     flex-direction: column;
     align-items: stretch;
@@ -1579,17 +2141,12 @@ function learnMore() {
     grid-column: auto;
   }
 
-
   .stats-grid {
     grid-template-columns: 1fr;
   }
 
   .quick-grid {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .order-status {
-    min-width: 60px;
   }
 
   .smart-banner {

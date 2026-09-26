@@ -14,6 +14,9 @@ import {
 } from "frappe-ui";
 
 import VueApexCharts from "vue3-apexcharts";
+import ElementPlus from "element-plus";
+import "element-plus/dist/index.css";
+
 
 
 // ==================================================
@@ -73,7 +76,7 @@ function createLabApp(container) {
 
     app.use(resourcesPlugin);
 
-
+    app.use(ElementPlus);
     // ------------------------------------------------
     // ApexCharts
     // ------------------------------------------------

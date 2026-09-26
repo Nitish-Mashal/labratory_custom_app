@@ -2,89 +2,139 @@ import frappe
 from frappe.utils import today
 
 
+# ============================================================
 # MAIN DASHBOARD API
+# ============================================================
 
 @frappe.whitelist()
 def get_dashboard_data(from_date=None, to_date=None):
-    """
-    Single API for Laboratory Dashboard.
-
-    Reads:
-        - Lab Test
-        - Sample Collection
-        - Observation
-        - Diagnostic Report
-        - Service Request
-        - Patient
-
-    Status options are read directly from the DocType metadata.
-    No status values are hardcoded.
-    """
 
     from_date = from_date or today()
     to_date = to_date or today()
 
-   
+    from_datetime = f"{from_date} 00:00:00"
+    to_datetime = f"{to_date} 23:59:59"
+
+    # ========================================================
     # SUMMARY
-    
+    # ========================================================
+
     summary = {
-        "total_lab_tests": frappe.db.count("Lab Test"),
-        "total_samples": frappe.db.count("Sample Collection"),
-        "total_observations": frappe.db.count("Observation"),
-        "total_reports": frappe.db.count("Diagnostic Report"),
-        "total_service_requests": frappe.db.count("Service Request"),
-        "total_patients": frappe.db.count("Patient"),
+
+        # ----------------------------------------------------
+        # LAB TESTS
+        # ----------------------------------------------------
+
+        "total_lab_tests": get_date_count(
+            "Lab Test",
+            "date",
+            from_date,
+            to_date
+        ),
+
+        # ----------------------------------------------------
+        # SAMPLE COLLECTION
+        # ----------------------------------------------------
+
+        "total_samples": get_date_count(
+            "Sample Collection",
+            "collected_time",
+            from_datetime,
+            to_datetime
+        ),
+
+        # ----------------------------------------------------
+        # PATIENTS
+        # ----------------------------------------------------
+
+        "total_patients": frappe.db.count(
+            "Patient"
+        ),
+
+        # ----------------------------------------------------
+        # SALES INVOICES
+        # ----------------------------------------------------
+
+        "total_sales_invoices": get_date_count(
+            "Sales Invoice",
+            "posting_date",
+            from_date,
+            to_date
+        ),
+
+        # ----------------------------------------------------
+        # PAID AMOUNT
+        # ----------------------------------------------------
+
+        "total_paid_amount": get_sales_invoice_paid_amount(
+            from_date,
+            to_date
+        )
     }
 
-    # STATUS DATA    
+    # ========================================================
+    # LAB TEST STATUS
+    # ONLY DRAFT + COMPLETED
+    # ========================================================
 
     lab_tests = get_status_data(
         doctype="Lab Test",
         date_field="date",
         from_date=from_date,
-        to_date=to_date
+        to_date=to_date,
+        allowed_statuses=[
+            "Draft",
+            "Completed"
+        ]
     )
+
+    # ========================================================
+    # SAMPLE COLLECTION STATUS
+    # ========================================================
 
     sample_collection = get_status_data(
         doctype="Sample Collection",
         date_field="collected_time",
-        from_date=from_date,
-        to_date=to_date
+        from_date=from_datetime,
+        to_date=to_datetime
     )
 
-    observations = get_status_data(
-        doctype="Observation",
+    # ========================================================
+    # SALES INVOICE STATUS
+    # ========================================================
+
+    sales_invoices = get_status_data(
+        doctype="Sales Invoice",
         date_field="posting_date",
         from_date=from_date,
         to_date=to_date
     )
 
-    diagnostic_reports = get_status_data(
-        doctype="Diagnostic Report",
-        date_field="creation",
-        from_date=from_date,
-        to_date=to_date
-    )
+    # ========================================================
+    # RECENT LAB TESTS
+    # ASCENDING ORDER
+    # ========================================================
 
- 
-    # RECENT ORDERS
-    recent_orders = get_recent_service_requests(
+    recent_lab_tests = get_recent_lab_tests(
         from_date,
         to_date
     )
 
+    # ========================================================
+    # RECENT SALES INVOICES
+    # ========================================================
 
-    # RECENT REPORTS
-
-
-    recent_reports = get_recent_reports(
+    recent_sales_invoices = get_recent_sales_invoices(
         from_date,
         to_date
     )
 
-    # RETURN EVERYTHING IN ONE RESPONSE
+    # ========================================================
+    # FINAL RESPONSE
+    # ========================================================
 
     return {
+
         "success": True,
 
         "filters": {
@@ -98,55 +148,156 @@ def get_dashboard_data(from_date=None, to_date=None):
 
         "sample_collection": sample_collection,
 
-        "observations": observations,
+        "sales_invoices": sales_invoices,
 
-        "diagnostic_reports": diagnostic_reports,
+        "recent_lab_tests": recent_lab_tests,
 
-        "recent_orders": recent_orders,
-
-        "recent_reports": recent_reports
+        "recent_sales_invoices": recent_sales_invoices
     }
 
 
-# GENERIC STATUS FUNCTION
+# ============================================================
+# GENERIC DATE COUNT
+# ============================================================
+
+def get_date_count(
+    doctype,
+    date_field,
+    from_date,
+    to_date
+):
+
+    meta = frappe.get_meta(
+        doctype
+    )
+
+    field = meta.get_field(
+        date_field
+    )
+
+    if not field:
+        return 0
+
+    # --------------------------------------------------------
+    # DATE FIELD
+    # --------------------------------------------------------
+
+    if field.fieldtype == "Date":
+
+        filters = {
+            date_field: [
+                "between",
+                [
+                    from_date,
+                    to_date
+                ]
+            ]
+        }
+
+    # --------------------------------------------------------
+    # DATETIME FIELD
+    # --------------------------------------------------------
+
+    elif field.fieldtype == "Datetime":
+
+        filters = {
+            date_field: [
+                "between",
+                [
+                    from_date,
+                    to_date
+                ]
+            ]
+        }
+
+    else:
+
+        return 0
+
+    return frappe.db.count(
+        doctype,
+        filters=filters
+    )
+
+
+# ============================================================
+# SALES INVOICE PAID AMOUNT
+# ============================================================
+
+def get_sales_invoice_paid_amount(
+    from_date,
+    to_date
+):
+
+    result = frappe.db.sql(
+        """
+        SELECT
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN docstatus = 1
+                        THEN
+                            COALESCE(grand_total, 0)
+                            -
+                            COALESCE(outstanding_amount, 0)
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS total_paid
+
+        FROM `tabSales Invoice`
+
+        WHERE posting_date BETWEEN
+            %(from_date)s
+            AND %(to_date)s
+        """,
+        {
+            "from_date": from_date,
+            "to_date": to_date
+        },
+        as_dict=True
+    )
+
+    if not result:
+        return 0
+
+    return float(
+        result[0].total_paid or 0
+    )
+
+
+# ============================================================
+# GENERIC STATUS DATA
+# ============================================================
 
 def get_status_data(
     doctype,
     date_field=None,
     from_date=None,
-    to_date=None
+    to_date=None,
+    allowed_statuses=None
 ):
-    """
-    Get status options directly from DocType metadata.
 
-    Example:
+    meta = frappe.get_meta(
+        doctype
+    )
 
-    Lab Test:
-        Draft
-        Completed
-        Approved
-        Rejected
-        Cancelled
-
-    Sample Collection:
-        Pending
-        Partly Collected
-        Collected
-
-    Nothing is manually mapped.
-    """
-
-    meta = frappe.get_meta(doctype)
-
-    status_field = meta.get_field("status")
+    status_field = meta.get_field(
+        "status"
+    )
 
     if not status_field:
+
         return {
             "doctype": doctype,
+            "total": 0,
             "statuses": []
         }
 
-    # Read status options from DocType
+    # ========================================================
+    # GET STATUS OPTIONS FROM DOCTYPE
+    # ========================================================
 
     options = []
 
@@ -158,29 +309,37 @@ def get_status_data(
             if option.strip()
         ]
 
-    # Build filters
+    # ========================================================
+    # FILTER STATUS OPTIONS
+    # ========================================================
+
+    if allowed_statuses is not None:
+
+        options = [
+            option
+            for option in options
+            if option in allowed_statuses
+        ]
+
+    # ========================================================
+    # DATE FILTER
+    # ========================================================
 
     filters = {}
 
-    if date_field and from_date and to_date:
+    if date_field:
 
-        # Check field exists before using it
-        if meta.get_field(date_field):
+        date_meta = meta.get_field(
+            date_field
+        )
 
-            if date_field == "creation":
+        if date_meta:
 
-                filters["creation"] = [
-                    "between",
-                    [
-                        f"{from_date} 00:00:00",
-                        f"{to_date} 23:59:59"
-                    ]
-                ]
+            # ------------------------------------------------
+            # DATE
+            # ------------------------------------------------
 
-            elif meta.get_field(date_field).fieldtype in [
-                "Date",
-                "Datetime"
-            ]:
+            if date_meta.fieldtype == "Date":
 
                 filters[date_field] = [
                     "between",
@@ -190,13 +349,40 @@ def get_status_data(
                     ]
                 ]
 
-    # Count every status
+            # ------------------------------------------------
+            # DATETIME
+            # ------------------------------------------------
+
+            elif date_meta.fieldtype == "Datetime":
+
+                filters[date_field] = [
+                    "between",
+                    [
+                        from_date,
+                        to_date
+                    ]
+                ]
+
+    # ========================================================
+    # TOTAL
+    # ========================================================
+
+    total = frappe.db.count(
+        doctype,
+        filters=filters
+    )
+
+    # ========================================================
+    # STATUS COUNTS
+    # ========================================================
 
     status_result = []
 
     for status in options:
 
-        count_filters = dict(filters)
+        count_filters = dict(
+            filters
+        )
 
         count_filters["status"] = status
 
@@ -206,128 +392,72 @@ def get_status_data(
         )
 
         status_result.append({
+
             "label": status,
+
             "value": status,
+
             "count": count
         })
 
-    # Total records in selected date range
-
-    total = frappe.db.count(
-        doctype,
-        filters=filters
-    )
+    # ========================================================
+    # RESPONSE
+    # ========================================================
 
     return {
+
         "doctype": doctype,
+
         "total": total,
+
         "statuses": status_result
     }
 
 
-# RECENT SERVICE REQUESTS
+# ============================================================
+# RECENT LAB TESTS
+# ASCENDING ORDER
+# ============================================================
 
-def get_recent_service_requests(
+def get_recent_lab_tests(
     from_date=None,
     to_date=None
 ):
 
-    meta = frappe.get_meta("Service Request")
+    filters = {
 
-    filters = {}
-
-    if meta.get_field("order_date"):
-
-        filters["order_date"] = [
+        "date": [
             "between",
             [
                 from_date,
                 to_date
             ]
         ]
-
-    records = frappe.get_all(
-        "Service Request",
-        filters=filters,
-        fields=[
-            "name",
-            "title",
-            "order_date",
-            "order_time",
-            "status",
-            "patient",
-            "patient_name",
-            "practitioner",
-            "practitioner_name",
-            "priority",
-            "quantity",
-            "sample_collection_required"
-        ],
-        order_by="creation desc",
-        limit_page_length=10
-    )
-
-    result = []
-
-    for row in records:
-
-        result.append({
-            "name": row.name,
-            "title": row.title,
-            "order_date": row.order_date,
-            "order_time": row.order_time,
-
-            "status": get_code_value(row.status),
-
-            "patient": row.patient,
-            "patient_name": row.patient_name,
-
-            "practitioner": row.practitioner,
-            "practitioner_name": row.practitioner_name,
-
-            "priority": get_code_value(row.priority),
-
-            "quantity": row.quantity, 
-
-            "sample_collection_required": (
-                bool(row.sample_collection_required)
-            )
-        })
-
-    return result
-
-
-# RECENT DIAGNOSTIC REPORTS
-
-def get_recent_reports(
-    from_date=None,
-    to_date=None
-):
-
-    filters = {
-        "creation": [
-            "between",
-            [
-                f"{from_date} 00:00:00",
-                f"{to_date} 23:59:59"
-            ]
-        ]
     }
 
     records = frappe.get_all(
-        "Diagnostic Report",
+        "Lab Test",
+
         filters=filters,
+
         fields=[
             "name",
             "patient",
             "patient_name",
             "status",
-            "practitioner",
-            "practitioner_name",
-            "sample_collection",
-            "creation"
+            "date"
         ],
-        order_by="creation desc",
+
+        # ----------------------------------------------------
+        # ASCENDING:
+        # OLDEST DATE FIRST
+        # ----------------------------------------------------
+
+        order_by=(
+            "date asc, "
+            "creation asc"
+        ),
+
         limit_page_length=10
     )
 
@@ -336,6 +466,7 @@ def get_recent_reports(
     for row in records:
 
         result.append({
+
             "name": row.name,
 
             "patient": row.patient,
@@ -344,34 +475,98 @@ def get_recent_reports(
 
             "status": row.status,
 
-            "practitioner": row.practitioner,
-
-            "practitioner_name": row.practitioner_name,
-
-            "sample_collection": row.sample_collection,
-
-            "creation": row.creation
+            "date": row.date
         })
 
     return result
 
 
+# ============================================================
+# RECENT SALES INVOICES
+# ============================================================
 
-def get_code_value(value):
+def get_recent_sales_invoices(
+    from_date=None,
+    to_date=None
+):
 
-    if not value:
-        return None
+    filters = {
 
-    try:
+        "posting_date": [
+            "between",
+            [
+                from_date,
+                to_date
+            ]
+        ]
+    }
 
-        result = frappe.db.get_value(
-            "Code Value",
-            value,
-            "display"
-        )
+    records = frappe.get_all(
+        "Sales Invoice",
 
-        return result or value
+        filters=filters,
 
-    except Exception:
+        fields=[
+            "name",
+            "posting_date",
+            "customer",
+            "customer_name",
+            "status",
+            "grand_total",
+            "outstanding_amount",
+            "currency",
+            "docstatus"
+        ],
 
-        return value
+        order_by=(
+            "posting_date desc, "
+            "creation desc"
+        ),
+
+        limit_page_length=10
+    )
+
+    result = []
+
+    for row in records:
+
+        # ----------------------------------------------------
+        # CALCULATE PAID AMOUNT
+        # ----------------------------------------------------
+
+        if row.docstatus == 1:
+
+            paid_amount = (
+                float(row.grand_total or 0)
+                -
+                float(row.outstanding_amount or 0)
+            )
+
+        else:
+
+            paid_amount = 0
+
+        result.append({
+
+            "name": row.name,
+
+            "posting_date": row.posting_date,
+
+            "customer": row.customer,
+
+            "customer_name": row.customer_name,
+
+            "status": row.status,
+
+            "grand_total": float(
+                row.grand_total or 0
+            ),
+
+            "paid_amount": paid_amount,
+
+            "currency": row.currency,
+
+            "docstatus": row.docstatus
+        })
+
+    return result
