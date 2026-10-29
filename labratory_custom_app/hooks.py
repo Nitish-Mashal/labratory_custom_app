@@ -30,6 +30,16 @@ fixtures = [
 
 ]
 
+add_to_apps_screen = [
+    {
+        "name": "labratory_custom_app",
+        "logo": "/assets/labratory_custom_app/images/laboratory.svg",
+        "title": "Laboratory",
+        "route": "/app/labratory-custom-app",
+        "has_permission": "labratory_custom_app.api.check_laboratory_app_permission",
+    }
+]
+
 app_include_js = [
     "/assets/labratory_custom_app/frontend/index.js"
 ]
