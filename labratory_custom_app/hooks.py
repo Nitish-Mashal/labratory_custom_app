@@ -113,8 +113,7 @@ app_include_js = [
 # Installation
 # ------------
 
-# before_install = "labratory_custom_app.install.before_install"
-# after_install = "labratory_custom_app.install.after_install"
+after_install = "labratory_custom_app.install.after_install"
 
 # Uninstallation
 # ------------

@@ -1,1 +1,1 @@
-labratory-custom-app
+labratory_custom_app
