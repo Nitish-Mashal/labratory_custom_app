@@ -36,7 +36,7 @@ add_to_apps_screen = [
         "logo": "/assets/labratory_custom_app/images/laboratory.svg",
         "title": "Laboratory",
         "route": "/app/labratory-custom-app",
-        "has_permission": "labratory_custom_app.api.check_laboratory_app_permission",
+        # "has_permission": "labratory_custom_app.api.check_laboratory_app_permission",
     }
 ]
 
