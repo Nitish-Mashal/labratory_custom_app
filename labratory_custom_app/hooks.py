@@ -124,6 +124,7 @@ app_include_js = [
 # ------------
 
 after_install = "labratory_custom_app.install.after_install"
+after_migrate = "labratory_custom_app.install.after_migrate"
 
 # Uninstallation
 # ------------
