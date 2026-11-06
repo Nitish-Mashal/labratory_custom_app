@@ -4,17 +4,20 @@
  "allow_rename": 1,
  "creation": "2026-09-23 15:19:39.019712",
  "doctype": "DocType",
+ "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "lab_test"
+   "lab_test"
  ],
  "fields": [
-  {
-   "fieldname": "lab_test",
-   "fieldtype": "Link",
-   "label": "Lab Test",
-   "options": "Lab Test Template"
-  }
+   {
+    "columns": 3,
+    "fieldname": "lab_test",
+    "fieldtype": "Link",
+    "in_list_view": 1,
+    "label": "Lab Test",
+    "options": "Lab Test Template"
+   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
