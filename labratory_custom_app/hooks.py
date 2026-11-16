@@ -43,6 +43,10 @@ add_to_apps_screen = [
 app_include_js = [
     "/assets/labratory_custom_app/frontend/index.js"
 ]
+
+doctype_js = {
+    "Lab Test": "public/js/lab_test.js"
+}
 # Apps
 # ------------------
 
