@@ -152,7 +152,26 @@ class CustomLabTest(LabTest):
             if not row.template or row.template in selected_templates
         ]
 
+    def sync_patient_age(self):
+        """Keep patient_age in sync with Patient.custom_age.
+
+        The "Lab Test Age Generate" client script re-fetches custom_age on
+        every form refresh and calls frm.set_value("patient_age", ...).
+        If the saved value differs, the form is re-dirtied right after save
+        and the header indicator flips to "Not Saved". Persisting the same
+        value server-side makes that set_value a no-op, so the indicator
+        stays what healthcare shows (Draft / Completed / ...).
+        """
+        if not self.patient:
+            return
+
+        age = frappe.db.get_value("Patient", self.patient, "custom_age")
+        if age:
+            self.patient_age = age
+
     def validate(self):
+
+        self.sync_patient_age()
 
         self.load_invoice_templates()
 
