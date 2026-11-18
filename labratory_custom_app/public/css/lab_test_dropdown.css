@@ -1,3 +1,30 @@
+.frappe-control[data-fieldname="custom_lab_test"] .grid-row-open .form-in-grid {
+	position: relative !important;
+	top: auto !important;
+	left: auto !important;
+	transform: none !important;
+	width: auto !important;
+	max-width: none !important;
+	margin: 0 !important;
+	overflow: visible !important;
+	z-index: 1021;
+}
+
+.frappe-control[data-fieldname="custom_lab_test"]
+	.form-grid-container:has(.grid-row-open),
+.frappe-control[data-fieldname="custom_lab_test"] .form-grid:has(.grid-row-open),
+.frappe-control[data-fieldname="custom_lab_test"] .grid-body:has(.grid-row-open),
+.frappe-control[data-fieldname="custom_lab_test"]
+	.grid-row-open
+	.grid-form-body {
+	overflow: visible !important;
+}
+
+body:has(.frappe-control[data-fieldname="custom_lab_test"] .grid-row-open)
+	#freeze.grid-form {
+	display: none !important;
+}
+
 .grid-field:has(
 	.grid-row.editable-row .grid-static-col[data-fieldname="lab_test"] input:focus
 ):has(> .awesomplete > ul:not([hidden])) {
