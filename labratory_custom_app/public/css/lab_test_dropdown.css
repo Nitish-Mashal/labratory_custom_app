@@ -1,3 +1,10 @@
+.grid-field:has(
+	.grid-row.editable-row .grid-static-col[data-fieldname="lab_test"] input:focus
+):has(> .awesomplete > ul:not([hidden])) {
+	position: relative;
+	z-index: 1022;
+}
+
 .grid-row-open .form-in-grid:has(
 	.grid-form-body .frappe-control[data-fieldname="lab_test"] .awesomplete > ul:not([hidden])
 ) {
