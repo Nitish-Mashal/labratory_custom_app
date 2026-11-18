@@ -45,7 +45,8 @@ app_include_js = [
 ]
 
 doctype_js = {
-    "Lab Test": "public/js/lab_test.js"
+    "Lab Test": "public/js/lab_test.js",
+    "Lab Test": "public/js/lab_test_print.js"
 }
 # Apps
 # ------------------
