@@ -44,9 +44,12 @@ app_include_js = [
     "/assets/labratory_custom_app/frontend/index.js"
 ]
 
+app_include_css = [
+    "/assets/labratory_custom_app/css/lab_test_dropdown.css"
+]
+
 doctype_js = {
-    "Lab Test": "public/js/lab_test.js",
-    "Lab Test": "public/js/lab_test_print.js"
+    "Lab Test": "public/js/lab_test.js"
 }
 # Apps
 # ------------------

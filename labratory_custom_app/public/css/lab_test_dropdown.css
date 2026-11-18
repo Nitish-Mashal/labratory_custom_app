@@ -1,0 +1,23 @@
+.grid-row-open .form-in-grid:has(
+	.grid-form-body .frappe-control[data-fieldname="lab_test"] .awesomplete > ul:not([hidden])
+) {
+	overflow: visible;
+}
+
+.grid-row-open
+	.form-in-grid:has(
+		.grid-form-body .frappe-control[data-fieldname="lab_test"] .awesomplete > ul:not([hidden])
+	)
+	.grid-form-body {
+	overflow: visible;
+}
+
+.grid-row-open
+	.form-in-grid:has(
+		.grid-form-body .frappe-control[data-fieldname="lab_test"] .awesomplete > ul:not([hidden])
+	)
+	.frappe-control[data-fieldname="lab_test"]
+	.awesomplete
+	> ul {
+	z-index: 20;
+}
